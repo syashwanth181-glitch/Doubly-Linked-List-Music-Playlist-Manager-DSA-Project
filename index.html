@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Playlist Manager – Doubly Linked List</title>
+<style>
+:root{--bg:#eef1f5;--fg:#101a2e;--mut:#5d6a80;--card:#fff;--bd:#d3dae5;--ac:#0f766e;--on:#fff;--err:#b42318;
+ box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0d1320;--fg:#e7ecf5;--mut:#93a0b8;--card:#172033;--bd:#2a364d;--ac:#2dd4bf;--on:#07201c;--err:#ff8a80}}
+:root[data-theme="dark"]{--bg:#0d1320;--fg:#e7ecf5;--mut:#93a0b8;--card:#172033;--bd:#2a364d;--ac:#2dd4bf;--on:#07201c;--err:#ff8a80}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 "Avenir Next","Segoe UI",system-ui,sans-serif}
+main{max-width:920px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:1.9rem;margin:0 0 4px;letter-spacing:-.02em}
+p.sub{margin:0 0 20px;color:var(--mut);max-width:60ch}
+.badge{display:inline-block;font-size:.8rem;padding:2px 10px;border:1px solid var(--bd);border-radius:99px;color:var(--mut);margin-left:8px;vertical-align:middle}
+.now{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+.now h2{margin:0;font-size:1.15rem}.now small{color:var(--mut)}
+button,input,select{font:inherit;color:inherit}
+button{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:8px 14px;cursor:pointer}
+button:hover{border-color:var(--ac)}button:focus-visible,input:focus-visible,select:focus-visible,.node:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+button.p{background:var(--ac);color:var(--on);border-color:var(--ac);font-weight:600}
+.row{display:flex;flex-wrap:wrap;gap:8px}
+.chain{display:flex;align-items:stretch;overflow-x:auto;padding:28px 4px 14px;margin-top:16px}
+.node{position:relative;flex:0 0 150px;background:var(--card);border:1.5px solid var(--bd);border-radius:10px;padding:12px;cursor:pointer;display:flex;flex-direction:column;gap:2px}
+.node.cur{background:var(--ac);border-color:var(--ac);color:var(--on)}
+.node span{font-size:.85rem;opacity:.75}
+.node .x{position:absolute;top:4px;right:4px;border:0;background:none;padding:2px 7px;font-size:1.1rem;color:inherit;opacity:.6}
+.node .tag{position:absolute;top:-22px;left:2px;font-size:.78rem;color:var(--mut);font-weight:600}
+.arr{flex:0 0 auto;align-self:center;padding:0 8px;color:var(--mut);white-space:nowrap}
+.panel{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-top:16px}
+.panel h3{margin:0 0 10px;font-size:1rem}
+input,select{background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;min-width:0}
+#idx{width:80px}
+#err{color:var(--err);min-height:1.5em;margin:8px 0 0}
+#log{color:var(--mut)}#log b{color:var(--fg)}
+@media (prefers-reduced-motion:no-preference){.node{transition:transform .15s}.node:hover{transform:translateY(-2px)}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Playlist Manager <span class="badge" id="mode">connecting…</span></h1>
+  <p class="sub">Every song is a node in a doubly linked list. Each node points to the song before and after it, so skipping forward or back is a single pointer hop.</p>
+
+  <section class="now" aria-live="polite">
+    <div><small>Now playing</small><h2 id="now">–</h2></div>
+    <div class="row">
+      <button onclick="act('prev')">Previous</button>
+      <button class="p" onclick="act('next')">Next</button>
+      <button onclick="act('reverse')">Reverse list</button>
+      <button onclick="act('reset')">Reset</button>
+    </div>
+  </section>
+
+  <div class="chain" id="list" aria-label="Playlist linked list"></div>
+
+  <section class="panel">
+    <h3>Add a song</h3>
+    <div class="row">
+      <input id="t" placeholder="Song title" aria-label="Song title">
+      <input id="a" placeholder="Artist" aria-label="Artist">
+      <select id="pos" aria-label="Insert position" onchange="$('idx').hidden=this.value!=='index'">
+        <option value="last">At the end (tail)</option>
+        <option value="first">At the start (head)</option>
+        <option value="index">At position…</option>
+      </select>
+      <input id="idx" type="number" min="0" value="1" hidden aria-label="Position index">
+      <button class="p" onclick="add()">Add song</button>
+    </div>
+    <p id="err" role="alert"></p>
+  </section>
+
+  <section class="panel">
+    <h3>What the last operation cost</h3>
+    <div id="log"></div>
+  </section>
+</main>
+
+<script src="playlist.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = t => String(t).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
+let mode = 'demo';
+const local = new Playlist();   // used only when no backend is reachable
+
+async function call(op, body = {}) {
+  if (mode === 'api') {
+    const r = await fetch('/api/' + op, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    return d;
+  }
+  local[op](body);
+  return local.state();
+}
+async function act(op, body) {
+  try { render(await call(op, body)); } catch (e) { $('err').textContent = e.message; }
+}
+function add() {
+  const p = $('pos').value;
+  act('add', { title: $('t').value, artist: $('a').value, position: p === 'index' ? $('idx').value : p });
+  $('t').value = ''; $('a').value = '';
+}
+function render(s) {
+  $('err').textContent = '';
+  const cur = s.songs.find(x => x.current);
+  $('now').textContent = cur ? cur.title + ' – ' + cur.artist : 'Playlist is empty';
+  const n = s.songs.length;
+  $('list').innerHTML = '<div class="arr">null ⇄</div>' + s.songs.map((x, i) =>
+    `<div class="node${x.current ? ' cur' : ''}" tabindex="0" onclick="act('play',{id:${x.id}})" onkeydown="if(event.key==='Enter')act('play',{id:${x.id}})">
+      ${i === 0 || i === n - 1 ? `<span class="tag">${i === 0 ? 'HEAD' : ''}${i === 0 && n === 1 ? ' / ' : ''}${i === n - 1 ? 'TAIL' : ''}</span>` : ''}
+      <b>${esc(x.title)}</b><span>${esc(x.artist)}</span>
+      <button class="x" aria-label="Delete ${esc(x.title)}" onclick="event.stopPropagation();act('remove',{id:${x.id}})">×</button>
+    </div>${i < n - 1 ? '<div class="arr">⇄</div>' : ''}`).join('') + '<div class="arr">⇄ null</div>';
+  const l = s.last;
+  $('log').innerHTML = `Operation <b>${esc(l.op)}</b> · nodes visited <b>${l.hops}</b> · time <b>${esc(l.cost)}</b> · list size <b>${s.size}</b>`;
+}
+(async () => {
+  try {
+    const r = await fetch('/api/playlist');
+    if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) throw 0;
+    mode = 'api'; render(await r.json());
+    $('mode').textContent = 'Backend connected';
+  } catch { render(local.state()); $('mode').textContent = 'Demo mode (in browser)'; }
+})();
+</script>
+</body>
+</html>
