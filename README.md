@@ -2,7 +2,7 @@
 
 A full-stack DSA project. The playlist is stored as a **doubly linked list**: every song is a node with `prev` and `next` pointers, and the list tracks `head`, `tail` and the song that is currently playing.
 
-**Live demo:** _add your deployed link here_
+https://doubly-linked-list-music-playlist.onrender.com/
 
 ## Why a linked list?
 
